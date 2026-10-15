@@ -1,4 +1,5 @@
 // Workers AI commentary: a Japanese market brief and short notes on notable stocks.
+import { unsupportedNumbers, dropUnsupported } from "./core/ai-guard";
 import type { Env } from "./refresh";
 import type { MarketSnapshot, ScreenerRow } from "./market";
 import { SIGNAL_LABELS } from "./metrics";
@@ -19,9 +20,18 @@ async function chat(ai: AiBinding, system: string, user: string, maxTokens: numb
   // Qwen3 thinks aloud unless told not to; a <think> block that still comes back is removed
   const qwen = model.includes("qwen3");
   const content = qwen ? `${user}\n銘柄名・社名は与えられた表記のまま書き、翻訳しないこと。\n/no_think` : user;
-  const r = await ai.run(model, { messages: [{ role: "system", content: system }, { role: "user", content }], max_tokens: maxTokens, temperature: 0.3 });
-  const text = typeof r === "string" ? r : r?.response ?? r?.result?.response ?? r?.choices?.[0]?.message?.content ?? "";
-  return String(text).replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  // Up to two attempts; the one whose percentages all come from the prompt wins, and a sentence that still carries an invented
+  // percentage / bp is dropped (src/core/ai-guard.ts).
+  let best: { text: string; bad: number } | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await ai.run(model, { messages: [{ role: "system", content: system }, { role: "user", content }], max_tokens: maxTokens, temperature: 0.3 });
+    const raw = typeof r === "string" ? r : r?.response ?? r?.result?.response ?? r?.choices?.[0]?.message?.content ?? "";
+    const text = String(raw).replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+    const bad = unsupportedNumbers(text, user).length;
+    if (!best || bad < best.bad) best = { text, bad };
+    if (!bad) break;
+  }
+  return best!.bad ? dropUnsupported(best!.text, user) : best!.text;
 }
 
 // Per-stock notes (8 a day) on the lighter NOTE_MODEL, falling back to AI_MODEL on an error or a too-short reply.
