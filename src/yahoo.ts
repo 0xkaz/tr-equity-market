@@ -78,6 +78,7 @@ export interface Fundamentals {
   forwardPE?: number;
   priceToBook?: number;
   dividendYield?: number;       // percent
+  dividendYieldRaw?: number;    // percent, Yahoo's figure when it was corrected or dropped
   trailingAnnualDividendRate?: number;
   epsTrailing?: number;
   epsForward?: number;
@@ -115,6 +116,8 @@ export function cleanYield(y: number | undefined, rate: number | undefined, pric
   return y > 100 ? undefined : y;
 }
 
+const rawYield = (q: any): number | undefined => q.dividendYield ?? (q.trailingAnnualDividendYield != null ? q.trailingAnnualDividendYield * 100 : undefined);
+
 export async function fetchFundamentals(symbols: string[]): Promise<Fundamentals[]> {
   if (symbols.length === 0) return [];
   const { cookie, crumb } = await getCrumb();
@@ -133,7 +136,9 @@ export async function fetchFundamentals(symbols: string[]): Promise<Fundamentals
         trailingPE: q.trailingPE,
         forwardPE: q.forwardPE,
         priceToBook: q.priceToBook,
-        dividendYield: cleanYield(q.dividendYield ?? (q.trailingAnnualDividendYield != null ? q.trailingAnnualDividendYield * 100 : undefined), q.trailingAnnualDividendRate, q.regularMarketPrice),
+        dividendYield: cleanYield(rawYield(q), q.trailingAnnualDividendRate, q.regularMarketPrice),
+        // Yahoo's own figure, kept only when cleanYield replaced or dropped it (the hub's /quality lists these).
+        dividendYieldRaw: cleanYield(rawYield(q), q.trailingAnnualDividendRate, q.regularMarketPrice) !== rawYield(q) ? rawYield(q) : undefined,
         trailingAnnualDividendRate: q.trailingAnnualDividendRate,
         epsTrailing: q.epsTrailingTwelveMonths,
         epsForward: q.epsForward,
