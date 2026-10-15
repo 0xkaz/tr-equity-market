@@ -1,5 +1,7 @@
 // Yahoo Finance data access (chart API for OHLCV, quote API for fundamentals).
 
+import { parseDailyBars } from "./core/chart-bars";
+
 export interface Bar {
   date: string; // YYYY-MM-DD in exchange timezone
   open: number; high: number; low: number; close: number; volume: number;
@@ -33,32 +35,7 @@ export async function fetchChart(symbol: string, range: string): Promise<{ meta:
   if (!result) throw new Error(`yahoo chart ${symbol}: empty result`);
   const meta: ChartMeta = result.meta ?? {};
   const gmtoffset = Number(meta.gmtoffset ?? 28800);
-  const ts: number[] = result.timestamp ?? [];
-  const q = result.indicators?.quote?.[0] ?? {};
-  // While the regular session is still open Yahoo appends a partial bar for today; skip it so
-  // metrics / snapshots are only ever computed from completed sessions.
-  const reg = meta.currentTradingPeriod?.regular;
-  const nowSec = Date.now() / 1000;
-  const sessionOpen = reg?.start != null && reg?.end != null && nowSec >= reg.start && nowSec < reg.end;
-  const settledClose = !sessionOpen && meta.regularMarketPrice != null && isFinite(meta.regularMarketPrice) && meta.regularMarketTime != null ? meta.regularMarketPrice : null;
-  const bars: Bar[] = [];
-  const seen = new Set<string>();
-  for (let i = 0; i < ts.length; i++) {
-    if (sessionOpen && ts[i] >= reg!.start!) continue;
-    let c = q.close?.[i];
-    // Yahoo sometimes leaves the newest daily close empty after the bell; the quote meta then carries the settled price.
-    if ((c == null || !isFinite(c)) && i === ts.length - 1 && settledClose != null && toDate(Number(meta.regularMarketTime), gmtoffset) === toDate(ts[i], gmtoffset)) c = settledClose;
-    if (c == null || !isFinite(c)) continue;
-    const date = toDate(ts[i], gmtoffset);
-    if (seen.has(date)) continue; // guard against duplicate intraday stamp
-    seen.add(date);
-    bars.push({
-      date,
-      open: num(q.open?.[i], c), high: num(q.high?.[i], c), low: num(q.low?.[i], c),
-      close: round(c), volume: Math.round(q.volume?.[i] ?? 0),
-    });
-  }
-  bars.sort((a, b) => (a.date < b.date ? -1 : 1));
+  const bars = parseDailyBars(result, gmtoffset);
   return { meta, bars };
 }
 

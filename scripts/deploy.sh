@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 node scripts/check-crons.mjs
 node scripts/check-sync.mjs  # refuse to deploy if origin/main has commits this checkout lacks
 # the Yahoo chart code must keep the partial-bar / empty-close guards (behavioural check: equity-hub scripts/check-site-yahoo.mjs)
-grep -q settledClose src/yahoo.ts && grep -q sessionOpen src/yahoo.ts || { echo "src/yahoo.ts lacks the partial-bar / empty-close guards; refusing to deploy" >&2; exit 1; }
+grep -q parseDailyBars src/yahoo.ts && grep -q sessionOpen src/core/chart-bars.ts || { echo "src/yahoo.ts does not use the shared chart parser (src/core/chart-bars.ts); refusing to deploy" >&2; exit 1; }
 export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-proxy-injected}"
 export CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-124300268e36bf09488a7764257eb0d2}"
 node scripts/embed-static.mjs
