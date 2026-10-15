@@ -304,7 +304,7 @@
           <div><span>PER（実績 / 予想）</span><span>${f.trailingPE == null ? "–" : f.trailingPE.toFixed(1)} / ${f.forwardPE == null ? "–" : f.forwardPE.toFixed(1)}</span></div>
           <div><span>PBR</span><span>${f.priceToBook == null ? "–" : f.priceToBook.toFixed(2)}</span></div>
           <div><span>配当利回り</span><span>${f.dividendYield == null ? "–" : f.dividendYield.toFixed(2) + "%"}</span></div>
-          <div><span>年間配当</span><span>${f.trailingAnnualDividendRate == null ? "–" : fmt.cur(t) + " " + f.trailingAnnualDividendRate.toFixed(3)}</span></div>
+          <div><span>年間配当</span><span>${!(f.trailingAnnualDividendRate > 0) ? "–" : fmt.cur(t) + " " + f.trailingAnnualDividendRate.toFixed(3)}</span></div>
           <div><span>EPS（実績 / 予想）</span><span>${f.epsTrailing == null ? "–" : f.epsTrailing.toFixed(3)} / ${f.epsForward == null ? "–" : f.epsForward.toFixed(3)}</span></div>
           <div><span>次回決算</span><span>${f.earningsTimestamp ? new Date(f.earningsTimestamp * 1000).toLocaleDateString("ja-JP") : "–"}</span></div>
           <div><span>更新</span><span>${fmt.date(f.updatedAt)}</span></div>
