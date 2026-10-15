@@ -91,6 +91,19 @@ async function getCrumb(): Promise<{ cookie: string; crumb: string }> {
   return { cookie, crumb };
 }
 
+// Yahoo's dividendYield sometimes disagrees badly with its own trailing dividend rate / price (stale or forward figures).
+// Above 10% a yield that is more than 1.5x off that ratio is replaced by the ratio (rate and price share the quote unit, so
+// this also holds for pence / agorot quotes); anything above 100% is impossible and dropped.
+export function cleanYield(y: number | undefined, rate: number | undefined, price: number | undefined): number | undefined {
+  if (y == null || !Number.isFinite(y)) return undefined;
+  if (y > 10 && rate != null && rate > 0 && price != null && price > 0) {
+    const implied = (rate / price) * 100;
+    const ratio = y / implied;
+    if (ratio > 1.5 || ratio < 1 / 1.5) y = implied;
+  }
+  return y > 100 ? undefined : y;
+}
+
 export async function fetchFundamentals(symbols: string[]): Promise<Fundamentals[]> {
   if (symbols.length === 0) return [];
   const { cookie, crumb } = await getCrumb();
@@ -109,7 +122,7 @@ export async function fetchFundamentals(symbols: string[]): Promise<Fundamentals
         trailingPE: q.trailingPE,
         forwardPE: q.forwardPE,
         priceToBook: q.priceToBook,
-        dividendYield: q.dividendYield ?? (q.trailingAnnualDividendYield != null ? q.trailingAnnualDividendYield * 100 : undefined),
+        dividendYield: cleanYield(q.dividendYield ?? (q.trailingAnnualDividendYield != null ? q.trailingAnnualDividendYield * 100 : undefined), q.trailingAnnualDividendRate, q.regularMarketPrice),
         trailingAnnualDividendRate: q.trailingAnnualDividendRate,
         epsTrailing: q.epsTrailingTwelveMonths,
         epsForward: q.epsForward,
