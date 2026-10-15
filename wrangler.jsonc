@@ -1,0 +1,48 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tr-equity",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "account_id": "124300268e36bf09488a7764257eb0d2",
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "tr-equity.0xkaz.com", "custom_domain": true }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tr-equity",
+      "database_id": "121a8c52-9d66-43cb-8f2d-08463d6cb2db",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    // Borsa Istanbul closes 18:00 Istanbul time (15:00 UTC; Turkey has no DST; closing auction until ~18:10). Each run refreshes a chunk of
+    // stale tickers; the universe is fully refreshed within the window.
+    // Cloudflare cron numbers weekdays 1=Sunday..7=Saturday (1-5 would be Sun-Thu), so named days are used.
+    "crons": ["20,30,40,50 15 * * MON-FRI", "*/10 16-17 * * MON-FRI"]
+  },
+  "ai": { "binding": "AI" },
+  "keep_vars": true,
+  "send_email": [
+    { "name": "EMAIL", "allowed_sender_addresses": ["notifications@equity.0xkaz.com"] }
+  ],
+  // Central login through the hub (equity.0xkaz.com/auth/login, see equity-hub core/auth.ts). The token signing key and
+  // the Google client secret (fallback for direct login) come from the account Secrets Store.
+  "secrets_store_secrets": [
+    { "binding": "SSO_KEY", "store_id": "1b8c5d7f699e421b8d918c781890ea0d", "secret_name": "SSO_SIGNING_KEY" },
+    { "binding": "GOOGLE_SECRET_STORE", "store_id": "1b8c5d7f699e421b8d918c781890ea0d", "secret_name": "GOOGLE_CLIENT_SECRET" }
+  ],
+  "vars": {
+    "SSO_HUB": "https://equity.0xkaz.com",
+    "REFRESH_CHUNK": "25",
+    "STALE_HOURS": "18",
+    "EMAIL_FROM": "notifications@equity.0xkaz.com",
+    "PUBLIC_URL": "https://tr-equity.0xkaz.com",
+    // OAuth client ID is public; the client secret must be set with `wrangler secret put GOOGLE_CLIENT_SECRET`.
+    "GOOGLE_CLIENT_ID": "698267816579-b2sesn2m18ls1l86kpeupmrnlap49h9r.apps.googleusercontent.com"
+  },
+  // ADMIN_EMAILS / ALLOWED_EMAILS are set at deploy time (scripts/deploy.sh --var) or in the
+  // dashboard, not here, so personal addresses stay out of the repository. keep_vars keeps them.
+  "observability": { "enabled": true }
+}

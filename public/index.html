@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TR Equity Monitor</title>
+  <meta name="description" content="Borsa Istanbul（トルコ株式市場）の観察・スクリーニング用ダッシュボード">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/vendor/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <header>
+    <nav class="nav">
+      <span class="brand">🇹🇷 TR Equity Monitor</span>
+      <a href="#/" data-route="/">概況</a>
+      <a href="#/screener" data-route="/screener">スクリーナー</a>
+      <a href="#/watchlist" data-route="/watchlist">ウォッチリスト</a>
+      <a href="#/sectors" data-route="/sectors">セクター</a>
+      <a href="#/settings" data-route="/settings">設定・通知</a>
+      <a href="#/status" data-route="/status">状態</a>
+      <span class="spacer"></span>
+      <span class="status" id="userbox"></span>
+    </nav>
+  </header>
+  <main id="app"><p class="muted">読み込み中…</p></main>
+  <script src="/app.js"></script>
+  <script src="/core/market-switch.js" defer></script>
+</body>
+</html>
