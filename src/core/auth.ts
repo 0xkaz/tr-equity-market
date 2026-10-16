@@ -1,4 +1,4 @@
-// GENERATED from 0xkaz/equity-hub core/auth.ts (core 2026.10.06). Do not edit here: edit equity-hub/core and run scripts/sync-core.mjs.
+// GENERATED from 0xkaz/equity-hub core/auth.ts (core 2026.10.16-2). Do not edit here: edit equity-hub/core and run scripts/sync-core.mjs.
 // Google OAuth 2.0 (authorization code flow) + cookie sessions stored in D1.
 // Shared by every sister site. Site-specific values (cookie prefix) come from src/site.ts.
 //
@@ -205,7 +205,11 @@ export async function getUser(env: Env, request: Request): Promise<User | null> 
 export async function logout(env: Env, request: Request): Promise<Response> {
   const sid = parseCookies(request.headers.get("cookie") ?? undefined)[SESSION_COOKIE];
   if (sid) await env.DB.prepare("DELETE FROM sessions WHERE id = ?1").bind(sid).run();
-  const headers = new Headers({ Location: "/" });
+  // With hub SSO also end the hub session (it clears its cookie and sends the browser back here); otherwise the
+  // next login would go straight through without asking.
+  const back = `${new URL(request.url).origin}/`;
+  const to = ssoEnabled(env) && request.method === "GET" ? `${env.SSO_HUB!.replace(/\/+$/, "")}/auth/logout?return_to=${encodeURIComponent(back)}` : "/";
+  const headers = new Headers({ Location: to });
   headers.append("Set-Cookie", cookie(SESSION_COOKIE, "", 0));
   return new Response(null, { status: 302, headers });
 }

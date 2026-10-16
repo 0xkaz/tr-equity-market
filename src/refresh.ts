@@ -2,7 +2,7 @@
 // build the market snapshot once the whole universe is fresh.
 import { UNIVERSE, symbolFor, INDEX_SYMBOL } from "./universe";
 import { fetchChart, fetchFundamentals, type Bar } from "./yahoo";
-import { takeChartStats } from "./core/chart-bars";
+import { takeChartStats, isPreClose } from "./core/chart-bars";
 import { takeGuardStats } from "./core/ai-guard";
 import { computeMetrics, type Metrics } from "./metrics";
 import { buildSnapshot, type ScreenerRow, type MarketSnapshot } from "./market";
@@ -103,12 +103,12 @@ export async function runRefresh(env: Env, opts: { limit?: number; force?: boole
     }));
 
     const priceStmts: D1PreparedStatement[] = [];
-    const ok: { t: TickerRow; name: string | null; currency: string | null; bars: Bar[] }[] = [];
+    const ok: { t: TickerRow; name: string | null; currency: string | null; bars: Bar[]; preClose: boolean }[] = [];
     fetched.forEach((f, i) => {
       const t = targets[i];
       if (f.status === "fulfilled") {
         const name = f.value.meta.longName ?? f.value.meta.shortName ?? t.name ?? null;
-        ok.push({ t, name, currency: f.value.meta.currency ?? null, bars: f.value.bars });
+        ok.push({ t, name, currency: f.value.meta.currency ?? null, bars: f.value.bars, preClose: isPreClose(f.value.meta) });
         priceStmts.push(...chunkInsertPrices(db, t.symbol, f.value.bars));
       } else {
         result.failed.push({ symbol: t.symbol, error: String(f.reason?.message ?? f.reason) });
@@ -122,20 +122,24 @@ export async function runRefresh(env: Env, opts: { limit?: number; force?: boole
       db.prepare("SELECT date, open, high, low, close, volume FROM prices WHERE symbol = ?1 ORDER BY date DESC LIMIT ?2").bind(t.symbol, HIST_BARS))) : [];
     const metricStmts: D1PreparedStatement[] = [];
     const tickerStmts: D1PreparedStatement[] = [];
-    ok.forEach(({ t, name, currency }, i) => {
+    ok.forEach(({ t, name, currency, preClose }, i) => {
       const bars = ((hist[i].results ?? []) as Bar[]).reverse();
       const m = computeMetrics(bars);
       if (m) {
         metricStmts.push(db.prepare("INSERT INTO metrics (symbol, date, json, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(symbol) DO UPDATE SET date = excluded.date, json = excluded.json, updated_at = excluded.updated_at WHERE metrics.date IS NOT excluded.date OR metrics.json IS NOT excluded.json").bind(t.symbol, m.date, JSON.stringify(m), now));
       }
-      tickerStmts.push(db.prepare("UPDATE tickers SET name = COALESCE(?1, name), currency = COALESCE(?2, currency), last_fetched_at = ?3, last_price_date = ?4, fetch_error = NULL WHERE symbol = ?5")
-        .bind(name, currency, now, m?.date ?? t.last_price_date, t.symbol));
+      tickerStmts.push(preClose
+        // before today's close: keep the previous last_fetched_at so the first post-close run is not skipped by the staleness gate (isPreClose in core/chart-bars.ts)
+        ? db.prepare("UPDATE tickers SET name = COALESCE(?1, name), currency = COALESCE(?2, currency), last_price_date = ?3, fetch_error = NULL WHERE symbol = ?4").bind(name, currency, m?.date ?? t.last_price_date, t.symbol)
+        : db.prepare("UPDATE tickers SET name = COALESCE(?1, name), currency = COALESCE(?2, currency), last_fetched_at = ?3, last_price_date = ?4, fetch_error = NULL WHERE symbol = ?5")
+          .bind(name, currency, now, m?.date ?? t.last_price_date, t.symbol));
       result.processed.push(t.symbol);
     });
     for (const f of result.failed) {
       tickerStmts.push(db.prepare("UPDATE tickers SET last_fetched_at = ?1, fetch_error = ?2 WHERE symbol = ?3").bind(now, f.error.slice(0, 300), f.symbol));
     }
     await runBatched(db, [...metricStmts, ...tickerStmts]);
+    if (ok.some((o) => o.preClose)) (result as any).preClose = ok.filter((o) => o.preClose).length; // fetched before today's close: not counted as fresh
   }
 
   // 3) Remaining stale count; build snapshot when the universe is fresh.

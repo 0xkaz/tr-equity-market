@@ -1,4 +1,4 @@
-// GENERATED from 0xkaz/equity-hub core/chart-bars.ts (core 2026.10.15-1). Do not edit here: edit equity-hub/core and run scripts/sync-core.mjs.
+// GENERATED from 0xkaz/equity-hub core/chart-bars.ts (core 2026.10.16-2). Do not edit here: edit equity-hub/core and run scripts/sync-core.mjs.
 // Daily bars from a Yahoo v8 chart result, shared by every site's src/yahoo.ts (fetchChart).
 //  - While the regular session is still open Yahoo appends a partial bar for today; it is dropped, so metrics and
 //    snapshots only ever come from completed sessions.
@@ -38,4 +38,13 @@ export function parseDailyBars(result: any, gmtoffset: number, nowSec: number = 
   }
   bars.sort((a, b) => (a.date < b.date ? -1 : 1));
   return bars;
+}
+
+// True while today's regular session has not ended yet. Yahoo's currentTradingPeriod.regular is the exchange-local day's session (checked
+// 2026-10-16: still "today" after the close, and still today's session before the open), so a fetch for which this is true cannot hold
+// today's final bar. refresh.ts then does not stamp last_fetched_at, otherwise the 18 h staleness gate would skip the first post-close
+// run (AR was seeded at 06:56 UTC for a 20:00 UTC close and stayed a day behind).
+export function isPreClose(meta: any, nowSec: number = Date.now() / 1000): boolean {
+  const end = meta?.currentTradingPeriod?.regular?.end;
+  return end != null && Number(end) > nowSec;
 }
