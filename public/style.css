@@ -101,3 +101,7 @@ td.star-cell, th.star-cell { width: 28px; text-align: center; padding-left: 4px;
 .chip.hit { background: #fef3c7; color: #92400e; border-color: #f59e0b; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .chip.hit { background: #451a03; color: #fde68a; } }
 :root[data-theme="dark"] .chip.hit { background: #451a03; color: #fde68a; }
+
+/* phones: a wide table scrolls inside its panel instead of widening the whole page */
+.panel { min-width: 0; }
+.panel:has(> table) { overflow-x: auto; }
