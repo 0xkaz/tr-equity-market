@@ -3,6 +3,7 @@
 import { UNIVERSE, symbolFor, INDEX_SYMBOL } from "./universe";
 import { fetchChart, fetchFundamentals, type Bar } from "./yahoo";
 import { takeChartStats } from "./core/chart-bars";
+import { takeGuardStats } from "./core/ai-guard";
 import { computeMetrics, type Metrics } from "./metrics";
 import { buildSnapshot, type ScreenerRow, type MarketSnapshot } from "./market";
 import { sendDailyNotifications } from "./notify";
@@ -163,7 +164,7 @@ export async function runRefresh(env: Env, opts: { limit?: number; force?: boole
   }
 
   await db.prepare("INSERT INTO job_log (started_at, finished_at, kind, detail) VALUES (?1, ?2, ?3, ?4)")
-    .bind(startedAt, new Date().toISOString(), opts.symbols ? "refresh:symbols" : opts.force ? "refresh:force" : "refresh", JSON.stringify({ yahooNotes: takeChartStats(), ...result }).slice(0, 4000)).run();
+    .bind(startedAt, new Date().toISOString(), opts.symbols ? "refresh:symbols" : opts.force ? "refresh:force" : "refresh", JSON.stringify({ yahooNotes: takeChartStats(), aiGuard: takeGuardStats(), ...result }).slice(0, 4000)).run();
   return result;
 }
 

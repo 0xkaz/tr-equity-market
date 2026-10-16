@@ -1,5 +1,5 @@
 // Workers AI commentary: a Japanese market brief and short notes on notable stocks.
-import { unsupportedNumbers, dropUnsupported } from "./core/ai-guard";
+import { unsupportedFigures, dropUnsupported, noteRetry } from "./core/ai-guard";
 import type { Env } from "./refresh";
 import type { MarketSnapshot, ScreenerRow } from "./market";
 import { SIGNAL_LABELS } from "./metrics";
@@ -24,10 +24,11 @@ async function chat(ai: AiBinding, system: string, user: string, maxTokens: numb
   // percentage / bp is dropped (src/core/ai-guard.ts).
   let best: { text: string; bad: number } | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) noteRetry();
     const r = await ai.run(model, { messages: [{ role: "system", content: system }, { role: "user", content }], max_tokens: maxTokens, temperature: 0.3 });
     const raw = typeof r === "string" ? r : r?.response ?? r?.result?.response ?? r?.choices?.[0]?.message?.content ?? "";
     const text = String(raw).replace(/<think>[\s\S]*?<\/think>/g, "").trim();
-    const bad = unsupportedNumbers(text, user).length;
+    const bad = unsupportedFigures(text, user).length;
     if (!best || bad < best.bad) best = { text, bad };
     if (!bad) break;
   }

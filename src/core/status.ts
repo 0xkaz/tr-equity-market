@@ -1,4 +1,4 @@
-// GENERATED from 0xkaz/equity-hub core/status.ts (core 2026.10.15-1). Do not edit here: edit equity-hub/core and run scripts/sync-core.mjs.
+// GENERATED from 0xkaz/equity-hub core/status.ts (core 2026.10.16-1). Do not edit here: edit equity-hub/core and run scripts/sync-core.mjs.
 // Standard health/freshness report served at GET /api/status by every sister site.
 // The hub (equity.0xkaz.com) reads it daily to detect sites whose data stopped updating.
 import { SITE } from "../site";
@@ -17,6 +17,8 @@ export interface SiteStatus {
   fetchErrors: number;       // instruments whose last fetch failed
   yahooPartialDropped24h?: number; // partial bars of an open session that the chart parser dropped (job_log, last 24 h)
   yahooFilled24h?: number;         // empty newest closes filled from the quote meta (job_log, last 24 h)
+  aiRetries24h?: number;           // AI commentary attempts that were repeated because of an invented figure (job_log, last 24 h)
+  aiDropped24h?: number;           // sentences removed from AI commentary for an invented figure (job_log, last 24 h)
 }
 
 export function baseStatus(partial: Partial<SiteStatus>): SiteStatus {
@@ -40,10 +42,12 @@ export async function tickerSiteStatus(db: D1Database, opts: { staleHours?: numb
     db.prepare("SELECT detail FROM job_log WHERE started_at > ?1 AND detail LIKE '%yahooNotes%'").bind(new Date(Date.now() - 24 * 3600 * 1000).toISOString()),
   ]);
   // refresh jobs log {"yahooNotes":{"partialDropped":n,"filledFromMeta":n},...} first in their detail (see src/refresh.ts)
-  let partial = 0, filled = 0;
+  let partial = 0, filled = 0, retries = 0, dropped = 0;
   for (const r of (notes.results ?? []) as { detail: string | null }[]) {
     partial += Number(/"partialDropped":(\d+)/.exec(r.detail ?? "")?.[1] ?? 0);
     filled += Number(/"filledFromMeta":(\d+)/.exec(r.detail ?? "")?.[1] ?? 0);
+    retries += Number(/"aiGuard":\{"retries":(\d+)/.exec(r.detail ?? "")?.[1] ?? 0);
+    dropped += Number(/"aiGuard":\{"retries":\d+,"dropped":(\d+)/.exec(r.detail ?? "")?.[1] ?? 0);
   }
   const s = (snap.results?.[0] ?? null) as { date: string; created_at: string } | null;
   const j = (job.results?.[0] ?? null) as { started_at: string; kind: string } | null;
@@ -52,6 +56,6 @@ export async function tickerSiteStatus(db: D1Database, opts: { staleHours?: numb
     dataDate: s?.date ?? null, updatedAt: s?.created_at ?? null,
     lastJobAt: j?.started_at ?? null, lastJobKind: j?.kind ?? null,
     universe: Number(c.n ?? 0), stale: Number(c.stale ?? 0), fetchErrors: Number(c.errors ?? 0),
-    yahooPartialDropped24h: partial, yahooFilled24h: filled,
+    yahooPartialDropped24h: partial, yahooFilled24h: filled, aiRetries24h: retries, aiDropped24h: dropped,
   });
 }
