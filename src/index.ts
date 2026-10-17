@@ -362,6 +362,8 @@ app.get("/api/*", (c) => c.json({ error: "not found" }, 404));
 // Static dashboard (embedded at build time). Unknown paths fall back to index.html (SPA).
 app.get("*", (c) => {
   const path = new URL(c.req.url).pathname;
+  // a missing file or dot path (bot probes such as /.env, /.aws/credentials, /wp-login.php) is a 404, not the SPA page
+  if (!STATIC_FILES[path] && (/\.[a-z0-9]{1,8}$/i.test(path) || path.includes("/."))) return c.text("not found", 404);
   const file = STATIC_FILES[path] ?? (path.endsWith("/") ? STATIC_FILES[path + "index.html"] : undefined) ?? STATIC_FILES["/index.html"];
   if (!file) return c.text("not found", 404);
   if (c.req.header("if-none-match") === file.etag) return new Response(null, { status: 304, headers: { ETag: file.etag } });
