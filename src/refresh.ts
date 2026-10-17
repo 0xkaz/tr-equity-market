@@ -37,6 +37,14 @@ export async function ensureUniverse(db: D1Database): Promise<void> {
   const stmts = UNIVERSE.map((u) =>
     db.prepare("INSERT OR IGNORE INTO tickers (symbol, code, name, sector, kind) VALUES (?1, ?2, ?3, ?4, ?5)")
       .bind(symbolFor(u), u.code, u.name ?? null, u.sector, u.kind ?? "equity"));
+  // Tickers taken out of UNIVERSE (delisted / merged) stop being refreshed and listed; one that comes back is
+  // re-activated. Only rows whose state changes are written.
+  const keep = new Set(UNIVERSE.map((u) => symbolFor(u)));
+  const { results } = await db.prepare("SELECT symbol, active FROM tickers").all<{ symbol: string; active: number }>();
+  for (const r of results ?? []) {
+    if (r.active && !keep.has(r.symbol)) stmts.push(db.prepare("UPDATE tickers SET active = 0 WHERE symbol = ?1").bind(r.symbol));
+    else if (!r.active && keep.has(r.symbol)) stmts.push(db.prepare("UPDATE tickers SET active = 1 WHERE symbol = ?1").bind(r.symbol));
+  }
   for (let i = 0; i < stmts.length; i += 90) await db.batch(stmts.slice(i, i + 90));
 }
 
