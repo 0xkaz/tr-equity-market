@@ -1,4 +1,4 @@
-// GENERATED from 0xkaz/equity-hub core/status.ts (core 2026.10.16-1). Do not edit here: edit equity-hub/core and run scripts/sync-core.mjs.
+// GENERATED from 0xkaz/equity-hub core/status.ts (core 2026.10.17-1). Do not edit here: edit equity-hub/core and run scripts/sync-core.mjs.
 // Standard health/freshness report served at GET /api/status by every sister site.
 // The hub (equity.0xkaz.com) reads it daily to detect sites whose data stopped updating.
 import { SITE } from "../site";
@@ -39,7 +39,9 @@ export async function tickerSiteStatus(db: D1Database, opts: { staleHours?: numb
       SUM(CASE WHEN last_fetched_at IS NULL OR last_fetched_at < ?1 THEN 1 ELSE 0 END) AS stale,
       SUM(CASE WHEN fetch_error IS NOT NULL THEN 1 ELSE 0 END) AS errors
       FROM tickers WHERE active = 1`).bind(cutoff),
-    db.prepare("SELECT detail FROM job_log WHERE started_at > ?1 AND detail LIKE '%yahooNotes%'").bind(new Date(Date.now() - 24 * 3600 * 1000).toISOString()),
+    // bounded by id (the primary key): job_log is never pruned and started_at has no index, so a plain
+    // started_at filter scanned the whole table on every status call (the monitor polls every few minutes)
+    db.prepare("SELECT detail FROM job_log WHERE id > (SELECT COALESCE(MAX(id), 0) - 500 FROM job_log) AND started_at > ?1 AND detail LIKE '%yahooNotes%'").bind(new Date(Date.now() - 24 * 3600 * 1000).toISOString()),
   ]);
   // refresh jobs log {"yahooNotes":{"partialDropped":n,"filledFromMeta":n},...} first in their detail (see src/refresh.ts)
   let partial = 0, filled = 0, retries = 0, dropped = 0;
