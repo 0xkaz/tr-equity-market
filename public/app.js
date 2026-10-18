@@ -117,9 +117,10 @@
   const link = (code, label) => `<a href="#/stock/${code}">${esc(label)}</a>`;
 
   const isDark = () => document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
-  const chartTheme = () => isDark()
+  // the chart library formats with navigator.language unless told otherwise; a tag like "en-US@posix" throws in Intl
+  const chartTheme = () => ({ localization: { locale: "ja-JP" }, ...(isDark()
     ? { layout: { background: { color: "#171b22" }, textColor: "#9aa3b2" }, grid: { vertLines: { color: "#2a3040" }, horzLines: { color: "#2a3040" } } }
-    : { layout: { background: { color: "#ffffff" }, textColor: "#6b7280" }, grid: { vertLines: { color: "#eef0f3" }, horzLines: { color: "#eef0f3" } } };
+    : { layout: { background: { color: "#ffffff" }, textColor: "#6b7280" }, grid: { vertLines: { color: "#eef0f3" }, horzLines: { color: "#eef0f3" } } }) });
 
   // ---------- Overview ----------
   async function renderOverview() {
