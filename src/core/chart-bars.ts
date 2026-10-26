@@ -1,4 +1,4 @@
-// GENERATED from 0xkaz/equity-hub core/chart-bars.ts (core 2026.10.16-2). Do not edit here: edit equity-hub/core and run scripts/sync-core.mjs.
+// GENERATED from 0xkaz/equity-hub core/chart-bars.ts (core 2026.10.26-1). Do not edit here: edit equity-hub/core and run scripts/sync-core.mjs.
 // Daily bars from a Yahoo v8 chart result, shared by every site's src/yahoo.ts (fetchChart).
 //  - While the regular session is still open Yahoo appends a partial bar for today; it is dropped, so metrics and
 //    snapshots only ever come from completed sessions.
@@ -15,10 +15,25 @@ export function takeChartStats(): ChartStats { const s = stats; stats = { partia
 
 const round = (v: number) => Math.round(v * 10000) / 10000;
 const num = (v: any, fallback: number) => (v == null || !isFinite(v) ? round(fallback) : round(v));
-const toDate = (ts: number, gmtoffset: number) => new Date((ts + gmtoffset) * 1000).toISOString().slice(0, 10);
+// Local calendar date of a bar. Yahoo stamps a daily bar at its session start in exchange time, but meta.gmtoffset is today's
+// offset only: after a DST change it moved bars stamped at local midnight (FX on the London day, futures and DX-Y.NYB on the
+// New York day) to the previous date when a month was re-fetched (2026-10-26: GBPUSD=X of 10-23 came back as 10-22). The
+// exchange time zone gives each bar its own offset; the fixed offset stays the fallback when Yahoo names no zone.
+const dayFormat = new Map<string, Intl.DateTimeFormat>();
+function zoneDate(ts: number, tz: string): string | null {
+  try {
+    let f = dayFormat.get(tz);
+    if (!f) { f = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }); dayFormat.set(tz, f); }
+    const d = f.format(new Date(ts * 1000));
+    return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+  } catch { return null; }
+}
+const fixedDate = (ts: number, gmtoffset: number) => new Date((ts + gmtoffset) * 1000).toISOString().slice(0, 10);
 
 export function parseDailyBars(result: any, gmtoffset: number, nowSec: number = Date.now() / 1000): DailyBar[] {
   const meta = result?.meta ?? {};
+  const tz = typeof meta.exchangeTimezoneName === "string" && meta.exchangeTimezoneName ? meta.exchangeTimezoneName : null;
+  const toDate = (t: number, off: number) => (tz && zoneDate(t, tz)) || fixedDate(t, off);
   const ts: number[] = result?.timestamp ?? [];
   const q = result?.indicators?.quote?.[0] ?? {};
   const reg = meta.currentTradingPeriod?.regular;
