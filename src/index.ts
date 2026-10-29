@@ -366,8 +366,12 @@ app.get("*", (c) => {
   if (!STATIC_FILES[path] && (/\.[a-z0-9]{1,8}$/i.test(path) || path.includes("/."))) return c.text("not found", 404);
   const file = STATIC_FILES[path] ?? (path.endsWith("/") ? STATIC_FILES[path + "index.html"] : undefined) ?? STATIC_FILES["/index.html"];
   if (!file) return c.text("not found", 404);
-  if (c.req.header("if-none-match") === file.etag) return new Response(null, { status: 304, headers: { ETag: file.etag } });
-  return new Response(file.body, { headers: { "Content-Type": file.type, ETag: file.etag, "Cache-Control": "public, max-age=300" } });
+  // the edge marks the ETag weak (W/"…") when it compresses the body, and browsers send it back that way
+  if ((c.req.header("if-none-match") ?? "").split(",").some((t) => t.trim().replace(/^W\//, "") === file.etag)) return new Response(null, { status: 304, headers: { ETag: file.etag } });
+  // URLs with the content hash (?v=, written into index.html by scripts/embed-static.mjs) never change: cache them a year
+  const v = new URL(c.req.url).searchParams.get("v");
+  const cc = v && file.etag.startsWith(`"${v}`) ? "public, max-age=31536000, immutable" : "public, max-age=300";
+  return new Response(file.body, { headers: { "Content-Type": file.type, ETag: file.etag, "Cache-Control": cc } });
 });
 
 function safeJson<T>(s: string, fallback: T): T { try { return JSON.parse(s); } catch { return fallback; } }
