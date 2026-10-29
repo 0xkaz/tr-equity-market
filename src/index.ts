@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { isStockCode, stockPage, sitemapXml, stockIndexPage, type SeoStock } from "./seo";
+import { SECTOR_JA as SEO_SECTOR_JA } from "./universe";
 import { ALERT_FIELDS, parseAlertBody, metConditions, formatState, alertInputs } from "./alerts";
 import { runRefresh, rebuildSnapshot, refreshFundamentals, loadScreener, loadBars, backfillBreadth, type Env, ensureUniverse } from "./refresh";
 import { SIGNAL_LABELS, computeMetrics } from "./metrics";
@@ -358,6 +360,26 @@ app.post("/api/admin/alert-test", async (c) => {
 app.get("/api/status", async (c) => c.json(await tickerSiteStatus(c.env.DB, { staleHours: Number((c.env as any).STALE_HOURS ?? 18) }), 200, { "Cache-Control": "no-store" }));
 
 app.get("/api/*", (c) => c.json({ error: "not found" }, 404));
+
+// Crawlable stock pages, the stock list and the sitemap (src/seo.ts); stock pages are the app shell with their own head tags
+const SEO_SITE = "TR Equity Monitor";
+app.get("/stock/:code", (c) => edgeCached(c, async () => {
+  const code = c.req.param("code");
+  const shell = STATIC_FILES["/index.html"];
+  if (!isStockCode(code) || !shell) return c.text("not found", 404);
+  const t = await c.env.DB.prepare(`SELECT t.code, t.name, t.sector, t.kind, t.currency, p.date, p.close FROM tickers t
+    LEFT JOIN prices p ON p.symbol = t.symbol AND p.date = t.last_price_date WHERE t.code = ?1 AND t.active = 1`).bind(code).first<SeoStock>();
+  if (!t) return c.text("not found", 404);
+  return c.html(stockPage(shell.body, new URL(c.req.url).origin, t, SEO_SECTOR_JA, SEO_SITE), 200, { "Cache-Control": "public, max-age=3600" });
+}));
+app.get("/stocks", (c) => edgeCached(c, async () => {
+  const { results } = await c.env.DB.prepare("SELECT code, name, sector FROM tickers WHERE active = 1 ORDER BY code").all<{ code: string; name: string | null; sector: string | null }>();
+  return c.html(stockIndexPage(new URL(c.req.url).origin, SEO_SITE, results ?? [], SEO_SECTOR_JA), 200, { "Cache-Control": "public, max-age=3600" });
+}));
+app.get("/sitemap.xml", (c) => edgeCached(c, async () => {
+  const { results } = await c.env.DB.prepare("SELECT code, last_price_date FROM tickers WHERE active = 1 ORDER BY code").all<{ code: string; last_price_date: string | null }>();
+  return c.body(sitemapXml(new URL(c.req.url).origin, results ?? []), 200, { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=3600" });
+}));
 
 // Static dashboard (embedded at build time). Unknown paths fall back to index.html (SPA).
 app.get("*", (c) => {

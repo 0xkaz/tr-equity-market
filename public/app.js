@@ -448,7 +448,8 @@
 
   // ---------- Router ----------
   async function route() {
-    const hash = location.hash.replace(/^#/, "") || "/";
+    // a crawlable stock URL (/stock/<code>, src/seo.ts) opens that stock; links inside the app stay #/…
+    const hash = location.hash.replace(/^#/, "") || (/^\/stock\/[^/]+$/.test(location.pathname) ? decodeURIComponent(location.pathname) : "/");
     const [path, qs] = hash.split("?");
     const query = new URLSearchParams(qs || "");
     document.querySelectorAll(".nav a").forEach((a) => a.classList.toggle("active", a.dataset.route === path || (path.startsWith("/stock") && a.dataset.route === "/screener")));
