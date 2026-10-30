@@ -1,4 +1,4 @@
-// GENERATED from 0xkaz/equity-hub core/chart-bars.ts (core 2026.10.26-1). Do not edit here: edit equity-hub/core and run scripts/sync-core.mjs.
+// GENERATED from 0xkaz/equity-hub core/chart-bars.ts (core 2026.10.30-1). Do not edit here: edit equity-hub/core and run scripts/sync-core.mjs.
 // Daily bars from a Yahoo v8 chart result, shared by every site's src/yahoo.ts (fetchChart).
 //  - While the regular session is still open Yahoo appends a partial bar for today; it is dropped, so metrics and
 //    snapshots only ever come from completed sessions.
@@ -8,10 +8,10 @@
 // takeChartStats() returns (and resets) how often each case happened in this isolate; refresh jobs log it so the hub
 // can show whether Yahoo is misbehaving.
 export interface DailyBar { date: string; open: number; high: number; low: number; close: number; volume: number }
-export interface ChartStats { partialDropped: number; filledFromMeta: number }
+export interface ChartStats { partialDropped: number; filledFromMeta: number; filledFromNextOpen: number }
 
-let stats: ChartStats = { partialDropped: 0, filledFromMeta: 0 };
-export function takeChartStats(): ChartStats { const s = stats; stats = { partialDropped: 0, filledFromMeta: 0 }; return s; }
+let stats: ChartStats = { partialDropped: 0, filledFromMeta: 0, filledFromNextOpen: 0 };
+export function takeChartStats(): ChartStats { const s = stats; stats = { partialDropped: 0, filledFromMeta: 0, filledFromNextOpen: 0 }; return s; }
 
 const round = (v: number) => Math.round(v * 10000) / 10000;
 const num = (v: any, fallback: number) => (v == null || !isFinite(v) ? round(fallback) : round(v));
@@ -35,6 +35,7 @@ export function parseDailyBars(result: any, gmtoffset: number, nowSec: number = 
   const tz = typeof meta.exchangeTimezoneName === "string" && meta.exchangeTimezoneName ? meta.exchangeTimezoneName : null;
   const toDate = (t: number, off: number) => (tz && zoneDate(t, tz)) || fixedDate(t, off);
   const ts: number[] = result?.timestamp ?? [];
+  const crypto = meta.instrumentType === "CRYPTOCURRENCY";
   const q = result?.indicators?.quote?.[0] ?? {};
   const reg = meta.currentTradingPeriod?.regular;
   const sessionOpen = reg?.start != null && reg?.end != null && nowSec >= reg.start && nowSec < reg.end;
@@ -45,10 +46,20 @@ export function parseDailyBars(result: any, gmtoffset: number, nowSec: number = 
     if (sessionOpen && ts[i] >= reg.start) { if (q.close?.[i] != null) stats.partialDropped++; continue; }
     let c = q.close?.[i];
     if ((c == null || !isFinite(c)) && i === ts.length - 1 && settledClose != null && toDate(Number(meta.regularMarketTime), gmtoffset) === toDate(ts[i], gmtoffset)) { c = settledClose; stats.filledFromMeta++; }
+    // crypto trades round the clock, so a day's close is the next day's open; Yahoo leaves the bar of the day that just
+    // closed empty for hours (BTC-USD of 10-29 at 05:30 UTC on 10-30), which kept BTC / ETH / SOL a day behind
+    let fromNext = false;
+    if ((c == null || !isFinite(c)) && crypto && i + 1 < ts.length && q.open?.[i + 1] != null && isFinite(q.open[i + 1])) { c = q.open[i + 1]; fromNext = true; stats.filledFromNextOpen++; }
     if (c == null || !isFinite(c)) continue;
     const date = toDate(ts[i], gmtoffset);
     if (seen.has(date)) continue; // guard against duplicate intraday stamp
     seen.add(date);
+    if (fromNext) {
+      // the empty bar has no open / high / low either: the previous close opened the day, the range spans open and close
+      const o = bars.length ? bars[bars.length - 1].close : round(c);
+      bars.push({ date, open: o, high: round(Math.max(o, c)), low: round(Math.min(o, c)), close: round(c), volume: 0 });
+      continue;
+    }
     bars.push({ date, open: num(q.open?.[i], c), high: num(q.high?.[i], c), low: num(q.low?.[i], c), close: round(c), volume: Math.round(q.volume?.[i] ?? 0) });
   }
   bars.sort((a, b) => (a.date < b.date ? -1 : 1));
