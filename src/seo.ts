@@ -6,8 +6,8 @@
 export interface SeoStock { code: string; name: string | null; sector: string | null; kind: string; currency?: string | null; date: string | null; close: number | null }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] as string);
-// exchange codes such as SAP, 0700, AZZA3, BRK-B, SCA-B (no slashes; looked up as given)
-export const isStockCode = (code: string) => /^[0-9A-Za-z][0-9A-Za-z.-]{0,15}$/.test(code);
+// exchange codes such as SAP, 0700, AZZA3, BRK-B, SCA-B, M&M, PE&OLES (no slashes; looked up as given)
+export const isStockCode = (code: string) => /^[0-9A-Za-z][0-9A-Za-z.&-]{0,15}$/.test(code);
 // the site's exchange prefix for JSON-LD tickerSymbol (empty: left out) and the price currency when the row has none
 const TICKER_PREFIX = "IST";
 const DEFAULT_CURRENCY = "TRY";
