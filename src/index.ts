@@ -367,10 +367,11 @@ app.get("/stock/:code", (c) => edgeCached(c, async () => {
   const code = c.req.param("code");
   const shell = STATIC_FILES["/index.html"];
   if (!isStockCode(code) || !shell) return c.text("not found", 404);
-  const t = await c.env.DB.prepare(`SELECT t.code, t.name, t.sector, t.kind, t.currency, p.date, p.close FROM tickers t
-    LEFT JOIN prices p ON p.symbol = t.symbol AND p.date = t.last_price_date WHERE t.code = ?1 AND t.active = 1`).bind(code).first<SeoStock>();
+  const t = await c.env.DB.prepare(`SELECT t.code, t.name, t.sector, t.kind, t.currency, p.date, p.close, m.json AS metrics FROM tickers t
+    LEFT JOIN prices p ON p.symbol = t.symbol AND p.date = t.last_price_date LEFT JOIN metrics m ON m.symbol = t.symbol
+    WHERE t.code = ?1 AND t.active = 1`).bind(code).first<SeoStock>();
   if (!t) return c.text("not found", 404);
-  return c.html(stockPage(shell.body, new URL(c.req.url).origin, t, SEO_SECTOR_JA, SEO_SITE), 200, { "Cache-Control": "public, max-age=3600" });
+  return c.html(stockPage(shell.body, new URL(c.req.url).origin, t, SEO_SECTOR_JA, SEO_SITE, SIGNAL_LABELS), 200, { "Cache-Control": "public, max-age=3600" });
 }));
 app.get("/stocks", (c) => edgeCached(c, async () => {
   const { results } = await c.env.DB.prepare("SELECT code, name, sector FROM tickers WHERE active = 1 ORDER BY code").all<{ code: string; name: string | null; sector: string | null }>();

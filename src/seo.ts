@@ -3,7 +3,38 @@
 // own title, description, canonical URL and structured data (and a short summary until the app draws); the app reads
 // the path as its first route (public/app.js route()).
 
-export interface SeoStock { code: string; name: string | null; sector: string | null; kind: string; currency?: string | null; date: string | null; close: number | null }
+export interface SeoStock { code: string; name: string | null; sector: string | null; kind: string; currency?: string | null; date: string | null; close: number | null; metrics?: string | null }
+
+// The stock's latest computed figures (metrics.json) in words, for the description and the summary. Facts only, no view.
+interface Figures { chg1d?: number; chg1m?: number; chg3m?: number; chgYtd?: number; hi52?: number; lo52?: number; fromHi52?: number; fromLo52?: number; vsSma200?: number; rsi14?: number; signals?: string[] }
+const pct = (x: number) => `${x >= 0 ? "+" : ""}${x.toFixed(1)}%`;
+const num = (x: number) => x.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
+const isNum = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+function figuresOf(t: SeoStock): Figures | null {
+  if (!t.metrics) return null;
+  try { return JSON.parse(t.metrics) as Figures; } catch { return null; }
+}
+/** "1か月 +5.1%・3か月 +2.1%、52週高値から -23.3%" (the parts that exist) */
+function shortFigures(f: Figures | null): string {
+  if (!f) return "";
+  const moves = [isNum(f.chg1m) ? `1か月 ${pct(f.chg1m)}` : "", isNum(f.chg3m) ? `3か月 ${pct(f.chg3m)}` : ""].filter(Boolean).join("・");
+  return [moves, isNum(f.fromHi52) ? `52週高値から ${pct(f.fromHi52)}` : ""].filter(Boolean).join("、");
+}
+/** Sentences for the page summary: moves, the 52-week range, the 200-day average, RSI and current signals. */
+export function summarySentences(t: SeoStock, signalLabels: Record<string, string> = {}): string[] {
+  const f = figuresOf(t);
+  if (!f) return [];
+  const unit = t.kind === "index" ? "" : ` ${t.currency || DEFAULT_CURRENCY}`;
+  const out: string[] = [];
+  const moves = [isNum(f.chg1d) ? `前日比 ${pct(f.chg1d)}` : "", isNum(f.chg1m) ? `1か月 ${pct(f.chg1m)}` : "", isNum(f.chg3m) ? `3か月 ${pct(f.chg3m)}` : "", isNum(f.chgYtd) ? `年初来 ${pct(f.chgYtd)}` : ""].filter(Boolean);
+  if (moves.length) out.push(`騰落率は${moves.join("、")}。`);
+  if (isNum(f.hi52) && isNum(f.lo52) && isNum(f.fromHi52) && isNum(f.fromLo52)) out.push(`52週の高値は ${num(f.hi52)}${unit}（そこから ${pct(f.fromHi52)}）、安値は ${num(f.lo52)}${unit}（そこから ${pct(f.fromLo52)}）。`);
+  const tech = [isNum(f.vsSma200) ? `200日移動平均比 ${pct(f.vsSma200)}` : "", isNum(f.rsi14) ? `RSI(14) は ${f.rsi14.toFixed(0)}` : ""].filter(Boolean);
+  if (tech.length) out.push(`${tech.join("、")}。`);
+  const sig = (f.signals ?? []).map((s) => signalLabels[s] ?? s).filter(Boolean);
+  if (sig.length) out.push(`点灯中のシグナル: ${sig.join("、")}。`);
+  return out;
+}
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] as string);
 // exchange codes such as SAP, 0700, AZZA3, BRK-B, SCA-B, M&M, PE&OLES (no slashes; looked up as given)
@@ -17,13 +48,14 @@ export function stockMeta(t: SeoStock, sectorJa: Record<string, string>, site: s
   const what = t.kind === "index" ? "指数" : "株価";
   const title = `${name}（${t.code}）${what}・チャート・指標 | ${site}`;
   const sector = t.sector ? sectorJa[t.sector] ?? t.sector : null;
-  const price = t.close != null && t.date ? `終値 ${t.close.toLocaleString("ja-JP", { maximumFractionDigits: 2 })}${t.kind === "index" ? "" : ` ${t.currency || DEFAULT_CURRENCY}`}（${t.date}）。` : "";
+  const figs = shortFigures(figuresOf(t));
+  const price = t.close != null && t.date ? `終値 ${t.close.toLocaleString("ja-JP", { maximumFractionDigits: 2 })}${t.kind === "index" ? "" : ` ${t.currency || DEFAULT_CURRENCY}`}（${t.date}）${figs ? `、${figs}` : ""}。` : "";
   const description = `${name}（${t.code}${sector ? `・${sector}` : ""}）の${what}チャート、テクニカル指標、シグナル。${price}`;
   return { title, description };
 }
 
 /** The app shell (index.html) with the stock's head tags and a short summary in place of the loading line. */
-export function stockPage(shell: string, origin: string, t: SeoStock, sectorJa: Record<string, string>, site: string): string {
+export function stockPage(shell: string, origin: string, t: SeoStock, sectorJa: Record<string, string>, site: string, signalLabels: Record<string, string> = {}): string {
   const { title, description } = stockMeta(t, sectorJa, site);
   const url = `${origin}/stock/${encodeURIComponent(t.code)}`;
   const ld = {
@@ -36,7 +68,8 @@ export function stockPage(shell: string, origin: string, t: SeoStock, sectorJa: 
     `<meta property="og:description" content="${esc(description)}">`, `<meta property="og:url" content="${esc(url)}">`,
     `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\\u003c")}</script>`,
   ].join("\n  ");
-  const summary = `<h1>${esc(t.name || t.code)}（${esc(t.code)}）</h1><p>${esc(description)}</p><p class="muted">読み込み中…</p>`;
+  const facts = summarySentences(t, signalLabels);
+  const summary = `<h1>${esc(t.name || t.code)}（${esc(t.code)}）</h1><p>${esc(description)}</p>${facts.length ? `<p>${esc(facts.join(""))}</p><p class="muted">数値は${esc(t.date ?? "直近")}時点の参考情報で、投資の判断を勧めるものではありません。</p>` : ""}<p class="muted">読み込み中…</p>`;
   return shell
     .replace(/<title>[^<]*<\/title>/, `<title>${esc(title)}</title>`)
     .replace(/<meta name="description" content="[^"]*">/, `<meta name="description" content="${esc(description)}">`)
