@@ -35,7 +35,11 @@ const MAX_SQL_PARAMS = 100;
 
 export async function ensureUniverse(db: D1Database): Promise<void> {
   const stmts = UNIVERSE.map((u) =>
-    db.prepare("INSERT OR IGNORE INTO tickers (symbol, code, name, sector, kind) VALUES (?1, ?2, ?3, ?4, ?5)")
+    // a universe entry whose symbol changed under the same code (AR: ^MERV -> BCBA:MMSCI) re-points that row and clears its fetch
+    // state; with code UNIQUE a plain insert was silently ignored (INSERT OR IGNORE) or failed the whole batch
+    db.prepare(`INSERT INTO tickers (symbol, code, name, sector, kind) VALUES (?1, ?2, ?3, ?4, ?5)
+                ON CONFLICT(symbol) DO NOTHING
+                ON CONFLICT(code) DO UPDATE SET symbol = excluded.symbol, active = 1, last_fetched_at = NULL, last_price_date = NULL, fetch_error = NULL`)
       .bind(symbolFor(u), u.code, u.name ?? null, u.sector, u.kind ?? "equity"));
   // Tickers taken out of UNIVERSE (delisted / merged) stop being refreshed and listed; one that comes back is
   // re-activated. Only rows whose state changes are written.
