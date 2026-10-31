@@ -7,7 +7,7 @@ export interface SeoStock { code: string; name: string | null; sector: string | 
 
 // The stock's latest computed figures (metrics.json) in words, for the description and the summary. Facts only, no view.
 interface Figures { chg1d?: number; chg1m?: number; chg3m?: number; chgYtd?: number; hi52?: number; lo52?: number; fromHi52?: number; fromLo52?: number; vsSma200?: number; rsi14?: number; signals?: string[] }
-const pct = (x: number) => `${x >= 0 ? "+" : ""}${x.toFixed(1)}%`;
+const pct = (x: number) => { const r = Math.round(x * 10) / 10 || 0; return `${r >= 0 ? "+" : ""}${r.toFixed(1)}%`; }; // no "-0.0%"
 const num = (x: number) => x.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
 const isNum = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 function figuresOf(t: SeoStock): Figures | null {
