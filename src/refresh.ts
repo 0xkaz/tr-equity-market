@@ -68,6 +68,20 @@ function chunkInsertPrices(db: D1Database, symbol: string, bars: Bar[]): D1Prepa
   return out;
 }
 
+// Yahoo (and TradingView) re-scale a ticker's whole history after a split or a consolidation, but each refresh
+// re-fetches only the last month: the bars before it kept the old scale and the chart showed a step (2026-10: CTVA
+// x0.15 at 09-09, after Yahoo applied the 10-01 distribution). When the re-fetched bars disagree with the stored ones
+// on a day both have (the newest day aside, which may still be revised), the history was re-scaled: the ticker is
+// marked for a full re-fetch (last_price_date NULL = first-time fetch) on the next run.
+export function historyRescaled(stored: { date: string; close: number }[], fetched: Bar[]): boolean {
+  if (fetched.length < 2) return false;
+  const have = new Map(fetched.slice(0, -1).map((b) => [b.date, b.close]));
+  return stored.some((b) => {
+    const c = have.get(b.date);
+    return c != null && b.close > 0 && Math.abs(c / b.close - 1) > 0.01;
+  });
+}
+
 async function runBatched(db: D1Database, stmts: D1PreparedStatement[], size = 80): Promise<void> {
   for (let i = 0; i < stmts.length; i += size) await db.batch(stmts.slice(i, i + size));
 }
@@ -126,6 +140,12 @@ export async function runRefresh(env: Env, opts: { limit?: number; force?: boole
         result.failed.push({ symbol: t.symbol, error: String(f.reason?.message ?? f.reason) });
       }
     });
+    // Stored closes of the re-fetched days, read before the upsert overwrites them (update fetches only).
+    const updates = ok.filter((o) => o.t.last_price_date && o.bars.length > 1);
+    const stored = updates.length ? await db.batch(updates.map((o) =>
+      db.prepare("SELECT date, close FROM prices WHERE symbol = ?1 AND date >= ?2").bind(o.t.symbol, o.bars[0].date))) : [];
+    const rescaled = new Set(updates.filter((o, i) => historyRescaled((stored[i].results ?? []) as { date: string; close: number }[], o.bars)).map((o) => o.t.symbol));
+    if (rescaled.size) (result as any).rescaled = [...rescaled];
     await runBatched(db, priceStmts);
 
     // 2) Load history for metric computation (one batch) and compute.
@@ -147,6 +167,8 @@ export async function runRefresh(env: Env, opts: { limit?: number; force?: boole
           .bind(name, currency, now, m?.date ?? t.last_price_date, t.symbol));
       result.processed.push(t.symbol);
     });
+    // re-scaled history (historyRescaled): fetch it in full on the next run (runs after the ticker updates above)
+    for (const sym of rescaled) tickerStmts.push(db.prepare("UPDATE tickers SET last_fetched_at = NULL, last_price_date = NULL WHERE symbol = ?1").bind(sym));
     for (const f of result.failed) {
       tickerStmts.push(db.prepare("UPDATE tickers SET last_fetched_at = ?1, fetch_error = ?2 WHERE symbol = ?3").bind(now, f.error.slice(0, 300), f.symbol));
     }
