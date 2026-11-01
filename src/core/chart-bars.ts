@@ -1,4 +1,4 @@
-// GENERATED from 0xkaz/equity-hub core/chart-bars.ts (core 2026.10.30-1). Do not edit here: edit equity-hub/core and run scripts/sync-core.mjs.
+// GENERATED from 0xkaz/equity-hub core/chart-bars.ts (core 2026.11.01-1). Do not edit here: edit equity-hub/core and run scripts/sync-core.mjs.
 // Daily bars from a Yahoo v8 chart result, shared by every site's src/yahoo.ts (fetchChart).
 //  - While the regular session is still open Yahoo appends a partial bar for today; it is dropped, so metrics and
 //    snapshots only ever come from completed sessions.
@@ -8,10 +8,10 @@
 // takeChartStats() returns (and resets) how often each case happened in this isolate; refresh jobs log it so the hub
 // can show whether Yahoo is misbehaving.
 export interface DailyBar { date: string; open: number; high: number; low: number; close: number; volume: number }
-export interface ChartStats { partialDropped: number; filledFromMeta: number; filledFromNextOpen: number }
+export interface ChartStats { partialDropped: number; filledFromMeta: number; filledFromNextOpen: number; unitFixed: number; spikeDropped: number }
 
-let stats: ChartStats = { partialDropped: 0, filledFromMeta: 0, filledFromNextOpen: 0 };
-export function takeChartStats(): ChartStats { const s = stats; stats = { partialDropped: 0, filledFromMeta: 0, filledFromNextOpen: 0 }; return s; }
+let stats: ChartStats = { partialDropped: 0, filledFromMeta: 0, filledFromNextOpen: 0, unitFixed: 0, spikeDropped: 0 };
+export function takeChartStats(): ChartStats { const s = stats; stats = { partialDropped: 0, filledFromMeta: 0, filledFromNextOpen: 0, unitFixed: 0, spikeDropped: 0 }; return s; }
 
 const round = (v: number) => Math.round(v * 10000) / 10000;
 const num = (v: any, fallback: number) => (v == null || !isFinite(v) ? round(fallback) : round(v));
@@ -63,7 +63,32 @@ export function parseDailyBars(result: any, gmtoffset: number, nowSec: number = 
     bars.push({ date, open: num(q.open?.[i], c), high: num(q.high?.[i], c), low: num(q.low?.[i], c), close: round(c), volume: Math.round(q.volume?.[i] ?? 0) });
   }
   bars.sort((a, b) => (a.date < b.date ? -1 : 1));
-  return bars;
+  return fixSpikes(bars);
+}
+
+// A single day 100x off both neighbours is a unit slip of the source (Yahoo quoted ZAc / ILA bars in rand / shekel on
+// 2025-01-10 for six JSE names, SBK.JO on 2025-04-25): it is scaled back. Any other single day more than 20x off both
+// neighbours is a bad print (^J203.JO 179.8 between ~99,000 on 2025-07-23) and is dropped; a real move does not jump
+// 20x and come back the next day. The first and the last bar have one neighbour and are left alone.
+function fixSpikes(bars: DailyBar[]): DailyBar[] {
+  const out: DailyBar[] = [];
+  for (let i = 0; i < bars.length; i++) {
+    const b = bars[i];
+    if (i === 0 || i === bars.length - 1) { out.push(b); continue; }
+    // compared with each neighbour separately (a bad print must not make its good neighbours look off), and with the
+    // previous bar as already corrected
+    const p = out[out.length - 1].close, n = bars[i + 1].close;
+    if (!(p > 0 && n > 0 && b.close > 0)) { out.push(b); continue; }
+    const rp = b.close / p, rn = b.close / n;
+    const both = (lo: number, hi: number) => rp > lo && rp < hi && rn > lo && rn < hi;
+    const k = both(0.008, 0.0125) ? 100 : both(80, 125) ? 0.01 : null;
+    if (k != null) {
+      out.push({ ...b, open: round(b.open * k), high: round(b.high * k), low: round(b.low * k), close: round(b.close * k) });
+      stats.unitFixed++;
+    } else if ((rp < 0.05 && rn < 0.05) || (rp > 20 && rn > 20)) stats.spikeDropped++;
+    else out.push(b);
+  }
+  return out;
 }
 
 // True while today's regular session has not ended yet. Yahoo's currentTradingPeriod.regular is the exchange-local day's session (checked
