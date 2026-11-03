@@ -55,7 +55,15 @@ export function stockMeta(t: SeoStock, sectorJa: Record<string, string>, site: s
 }
 
 /** The app shell (index.html) with the stock's head tags and a short summary in place of the loading line. */
-export function stockPage(shell: string, origin: string, t: SeoStock, sectorJa: Record<string, string>, site: string, signalLabels: Record<string, string> = {}): string {
+/** Up to `max` other stocks of the same sector, nearest codes first (a stable order that spreads links across the sector). */
+export function sectorPeers(t: { code: string; sector: string | null }, all: Array<{ code: string; name: string | null; sector: string | null }>, max = 12) {
+  if (!t.sector) return [];
+  const n = (s: string) => (/^\d+$/.test(s) ? Number(s) : NaN);
+  const dist = (s: string) => { const a = n(s), b = n(t.code); return Number.isNaN(a) || Number.isNaN(b) ? Infinity : Math.abs(a - b); };
+  return all.filter((x) => x.sector === t.sector && x.code !== t.code).sort((a, b) => dist(a.code) - dist(b.code) || a.code.localeCompare(b.code)).slice(0, max);
+}
+
+export function stockPage(shell: string, origin: string, t: SeoStock, sectorJa: Record<string, string>, site: string, signalLabels: Record<string, string> = {}, peers: Array<{ code: string; name: string | null }> = []): string {
   const { title, description } = stockMeta(t, sectorJa, site);
   const url = `${origin}/stock/${encodeURIComponent(t.code)}`;
   const ld = {
@@ -69,7 +77,7 @@ export function stockPage(shell: string, origin: string, t: SeoStock, sectorJa: 
     `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\\u003c")}</script>`,
   ].join("\n  ");
   const facts = summarySentences(t, signalLabels);
-  const summary = `<h1>${esc(t.name || t.code)}（${esc(t.code)}）</h1><p>${esc(description)}</p>${facts.length ? `<p>${esc(facts.join(""))}</p><p class="muted">数値は${esc(t.date ?? "直近")}時点の参考情報で、投資の判断を勧めるものではありません。</p>` : ""}<p class="muted">読み込み中…</p>`;
+  const summary = `<h1>${esc(t.name || t.code)}（${esc(t.code)}）</h1><p>${esc(description)}</p>${facts.length ? `<p>${esc(facts.join(""))}</p><p class="muted">数値は${esc(t.date ?? "直近")}時点の参考情報で、投資の判断を勧めるものではありません。</p>` : ""}${peers.length && t.sector ? `<nav><h2>同じ業種の銘柄（${esc(sectorJa[t.sector] ?? t.sector)}）</h2><ul>${peers.map((x) => `<li><a href="/stock/${encodeURIComponent(x.code)}">${esc(x.name || x.code)}（${esc(x.code)}）</a></li>`).join("")}</ul><p><a href="/stocks">すべての銘柄</a></p></nav>` : ""}<p class="muted">読み込み中…</p>`;
   return shell
     .replace(/<title>[^<]*<\/title>/, `<title>${esc(title)}</title>`)
     .replace(/<meta name="description" content="[^"]*">/, `<meta name="description" content="${esc(description)}">`)

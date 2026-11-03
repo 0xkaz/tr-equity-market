@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { isStockCode, stockPage, sitemapXml, stockIndexPage, type SeoStock } from "./seo";
+import { isStockCode, stockPage, sitemapXml, stockIndexPage, sectorPeers, type SeoStock } from "./seo";
 import { SECTOR_JA as SEO_SECTOR_JA } from "./universe";
 import { ALERT_FIELDS, parseAlertBody, metConditions, formatState, alertInputs } from "./alerts";
 import { runRefresh, rebuildSnapshot, refreshFundamentals, loadScreener, loadBars, backfillBreadth, type Env, ensureUniverse } from "./refresh";
@@ -363,6 +363,14 @@ app.get("/api/*", (c) => c.json({ error: "not found" }, 404));
 
 // Crawlable stock pages, the stock list and the sitemap (src/seo.ts); stock pages are the app shell with their own head tags
 const SEO_SITE = "TR Equity Monitor";
+// active equities for the stock pages' sector links, kept in the isolate (the list changes a few times a year)
+let PEER_LIST: { at: number; rows: Array<{ code: string; name: string | null; sector: string | null }> } | null = null;
+async function peerList(db: D1Database) {
+  if (PEER_LIST && Date.now() - PEER_LIST.at < 600_000) return PEER_LIST.rows;
+  const { results } = await db.prepare("SELECT code, MAX(name) AS name, MAX(sector) AS sector FROM tickers WHERE active = 1 AND kind = 'equity' GROUP BY code").all<{ code: string; name: string | null; sector: string | null }>();
+  PEER_LIST = { at: Date.now(), rows: results ?? [] };
+  return PEER_LIST.rows;
+}
 app.get("/stock/:code", (c) => edgeCached(c, async () => {
   const code = c.req.param("code");
   const shell = STATIC_FILES["/index.html"];
@@ -371,7 +379,8 @@ app.get("/stock/:code", (c) => edgeCached(c, async () => {
     LEFT JOIN prices p ON p.symbol = t.symbol AND p.date = t.last_price_date LEFT JOIN metrics m ON m.symbol = t.symbol
     WHERE t.code = ?1 AND t.active = 1`).bind(code).first<SeoStock>();
   if (!t) return c.text("not found", 404);
-  return c.html(stockPage(shell.body, new URL(c.req.url).origin, t, SEO_SECTOR_JA, SEO_SITE, SIGNAL_LABELS), 200, { "Cache-Control": "public, max-age=3600" });
+  const peers = t.kind === "index" ? [] : sectorPeers(t, await peerList(c.env.DB));
+  return c.html(stockPage(shell.body, new URL(c.req.url).origin, t, SEO_SECTOR_JA, SEO_SITE, SIGNAL_LABELS, peers), 200, { "Cache-Control": "public, max-age=3600" });
 }));
 app.get("/stocks", (c) => edgeCached(c, async () => {
   const { results } = await c.env.DB.prepare("SELECT code, name, sector FROM tickers WHERE active = 1 ORDER BY code").all<{ code: string; name: string | null; sector: string | null }>();
