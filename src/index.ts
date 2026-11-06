@@ -386,7 +386,9 @@ app.get("/sitemap.xml", (c) => edgeCached(c, async () => {
 app.get("*", (c) => {
   const path = new URL(c.req.url).pathname;
   // a missing file or dot path (bot probes such as /.env, /.aws/credentials, /wp-login.php) is a 404, not the SPA page
-  if (!STATIC_FILES[path] && (/\.[a-z0-9]{1,8}$/i.test(path) || path.includes("/."))) return c.text("not found", 404);
+  // the dashboard routes with #/…, so a path that is neither "/" nor a file (nor a route above, such as /stock/<code>) is a
+  // probe or a stale link: a 404, not the SPA page with 200, which search engines count as an empty page (as JP)
+  if (!STATIC_FILES[path] && path !== "/") return c.text("not found", 404);
   const file = STATIC_FILES[path] ?? (path.endsWith("/") ? STATIC_FILES[path + "index.html"] : undefined) ?? STATIC_FILES["/index.html"];
   if (!file) return c.text("not found", 404);
   // the edge marks the ETag weak (W/"…") when it compresses the body, and browsers send it back that way
